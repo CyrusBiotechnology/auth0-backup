@@ -1,0 +1,61 @@
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: auth0-backup
+spec:
+  schedule: "@hourly"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 96
+  failedJobsHistoryLimit: 96
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: auth0-backup
+              image: gcr.io/my-project/auth0-backup:fuse
+              command:
+                - bash
+                - -c
+                - "mkdir -p /mnt/$BUCKET; gcsfuse $BUCKET /mnt/$BUCKET; backup.sh /mnt/$BUCKET"
+              volumeMounts:
+                - name: gcs-admin
+                  mountPath: /gcs-secret
+              env:
+                - name: GOOGLE_APPLICATION_CREDENTIALS
+                  value: /gcs-secret/key.json
+                - name: BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: auth0-backup
+                      key: BUCKET
+                - name: AUTH0_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: auth0-backup
+                      key: AUTH0_CLIENT_ID
+                - name: AUTH0_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: auth0-backup
+                      key: AUTH0_CLIENT_SECRET
+                - name: AUTH0_TENANT
+                  valueFrom:
+                    secretKeyRef:
+                      name: auth0-backup
+                      key: AUTH0_TENANT
+              securityContext:
+                privileged: true
+                capabilities:
+                  add:
+                    - SYS_ADMIN
+              lifecycle:
+                preStop:
+                  exec:
+                    command: ["fusermount", "-u", "/mnt/$BUCKET"]
+          volumes:
+            - name: gcs-admin
+              secret:
+                secretName: gcs-admin
