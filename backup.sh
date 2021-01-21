@@ -74,6 +74,9 @@ function get_resource() {
 
 # Backup all resources to the target
 function backup_resources() {
+  backup_filepath="$target/auth0-backup-$(date +%m-%d-%y)"
+  mkdir -p $backup_filepath
+
   for rs in "$@"; do
     success=false
     page=0
@@ -94,8 +97,9 @@ function backup_resources() {
       url="https://$AUTH0_TENANT/$query"
 
       # set filepaths for generated json
-      filepath_temp="$target/$rs/$rs-$(date +%m-%d-%y)_temp_pg-$page.json"
-      filepath_backup="$target/$rs/$rs-$(date +%m-%d-%y).json"
+      filepath_temp="$backup_filepath/$rs-temp_pg-$page.json"
+      filepath_backup="$backup_filepath/$rs.json"
+  
 
       # query for auth0 objects and store in response variable
       response=$(get_resource $query | jq -SM '.')
@@ -107,6 +111,7 @@ function backup_resources() {
       # if not, we have reached the end of resource results
       if [ "$(jq length $filepath_temp)" -lt 1 ];
       then
+        rm $filepath_temp
         success=true
         break
       elif [ "$(jq length $filepath_temp)" -gt 0 ];
