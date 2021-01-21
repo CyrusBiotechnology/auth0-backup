@@ -2,7 +2,7 @@
 
 # - CONSTANTS -
 readonly required_env_vars=('AUTH0_CLIENT_ID' 'AUTH0_CLIENT_SECRET' 'AUTH0_TENANT')
-readonly required_pagination_resources=('clients' 'client_grants' 'grants' 'connections' 'device-credentials' 'resource-servers' 'rules', 'logs')
+readonly required_pagination_resources=('clients' 'client_grants' 'grants' 'connections' 'device-credentials' 'resource-servers' 'rules' 'logs')
 
 
 # - FUNCTIONS -
