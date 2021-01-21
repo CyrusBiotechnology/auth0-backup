@@ -15,7 +15,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: auth0-backup
-              image: gcr.io/my-project/auth0-backup:fuse
+              image: gcr.io/cyrus-containers/auth0-backup:latest
               command:
                 - bash
                 - -c

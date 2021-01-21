@@ -2,6 +2,7 @@
 
 # - CONSTANTS -
 readonly required_env_vars=('AUTH0_CLIENT_ID' 'AUTH0_CLIENT_SECRET' 'AUTH0_TENANT')
+readonly required_pagination_resources=('clients' 'client_grants' 'grants' 'connections' 'device-credentials' 'resource-servers' 'rules', 'logs')
 
 
 # - FUNCTIONS -
@@ -41,6 +42,17 @@ function req_undef() {
   fi
 }
 
+# Check if str is in array
+# https://stackoverflow.com/a/8574392/1342445
+function in_array() {
+  local elem str="$1"
+  shift
+  for elem; do
+    [[ "$elem" == "$str" ]] && return 0
+  done
+  return 1
+}
+
 # Print an error message and exit
 function error_message() {
   echo "$1" > /dev/stderr
@@ -49,10 +61,14 @@ function error_message() {
 
 # Get a resource from the server
 function get_resource() {
-  curl --fail \
+
+  url="https://$AUTH0_TENANT/$1"
+  authorization="$token_type $token"
+
+  curl  -sb --fail \
     --request GET \
-    --url "https://$AUTH0_TENANT/$1" \
-    --header "authorization: $token_type $token" \
+    --url $url \
+    --header "authorization: $authorization" \
     --header 'content-type: application/json'
 }
 
@@ -60,18 +76,71 @@ function get_resource() {
 function backup_resources() {
   for rs in "$@"; do
     success=false
-    for i in {1..3}; do
-      if get_resource "api/v2/$rs" | jq -SM . > "$target/$rs.json"; then
+    page=0
+    per_page=100
+    url=""
+
+    until [ $success = true ]
+    do
+      # set query line if resources requires pagination
+      if in_array "${rs}" "${required_pagination_resources[@]}";
+      then
+        query="api/v2/$rs?page=$page&per_page=$per_page"
+      else
+        query="api/v2/$rs"
+        success=true
+      fi
+
+      url="https://$AUTH0_TENANT/$query"
+
+      # set filepaths for generated json
+      filepath_temp="$target/$rs/$rs-$(date +%m-%d-%y)_temp_pg-$page.json"
+      filepath_backup="$target/$rs/$rs-$(date +%m-%d-%y).json"
+
+      # query for auth0 objects and store in response variable
+      response=$(get_resource $query | jq -SM '.')
+
+      # parse response to json and push to temporary json file
+      echo $response | jq . > $filepath_temp
+
+      # check if response has results
+      # if not, we have reached the end of resource results
+      if [ "$(jq length $filepath_temp)" -lt 1 ];
+      then
         success=true
         break
+      elif [ "$(jq length $filepath_temp)" -gt 0 ];
+      then
+        # put all aggregated json objects into one 
+        jq . $filepath_temp >> $filepath_backup
+        jq '.[]' $filepath_backup > $filepath_temp
+        jq -s '.' $filepath_temp> $filepath_backup
+
+        # clean out temporary files
+        rm $filepath_temp
+
+        let page++
+
+        # there is a limitation to the # of logs you can query at a time/paginated
+        # 1) 100 logs/query
+        # 2) up to 1000 paginated logs
+        if [ "$rs" = "logs" ] && [ "$page" -eq 10 ];
+        then
+          success=true
+          break
+        fi
       else
+        # clean workspace if failed
+        rm $filepath_temp
+        rm $filepath_backup
         echo "Failed to get: api/v2/$rs, attempting try $i/3 in $((i**2)) seconds..."
         sleep $((i**2))
+        break
       fi
     done
 
     if ! $success; then
-      error_message "Failed to get api/v2/$rs!"
+      error_message "Failed to get $url"
     fi
   done
 }
@@ -129,7 +198,7 @@ trap - EXIT ERR
 
 echo "Backing up Auth0 to: $target/"
 
-if ! auth_json=$(curl -v \
+if ! auth_json=$(curl -sbv \
   --fail \
   --request POST \
   --url "https://$AUTH0_TENANT/oauth/token" \
@@ -150,7 +219,7 @@ backup_resources 'clients' \
   'connections' \
   'rules' \
   'grants' \
-  'logs' \
   'resource-servers' \
-  'rules-configs'
+  'rules-configs' \
+  'logs'
 
